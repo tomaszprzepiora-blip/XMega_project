@@ -1,0 +1,13 @@
+<MP3>
+	<Attributes>
+		<Url></Url>
+		<Image>xmega_mp3.JPG</Image>
+		<File></File>
+	</Attributes>
+	<Events>
+		<OnLeftClick></OnLeftClick>
+		<OnRightClick></OnRightClick>
+		<OnDblClick></OnDblClick>
+		<OnMouseOver>PreviewImage</OnMouseOver>
+	</Events>
+</MP3>

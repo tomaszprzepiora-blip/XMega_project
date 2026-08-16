@@ -1,0 +1,13 @@
+<Serial_Flash>
+	<Attributes>
+		<Url></Url>
+		<Image>xmega_flash.JPG</Image>
+		<File></File>
+	</Attributes>
+	<Events>
+		<OnLeftClick></OnLeftClick>
+		<OnRightClick></OnRightClick>
+		<OnDblClick></OnDblClick>
+		<OnMouseOver>PreviewImage</OnMouseOver>
+	</Events>
+</Serial_Flash>

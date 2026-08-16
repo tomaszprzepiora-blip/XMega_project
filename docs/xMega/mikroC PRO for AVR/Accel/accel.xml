@@ -1,0 +1,13 @@
+<accel>
+	<Attributes>
+		<Url></Url>
+		<Image>xmega_accel.JPG</Image>
+		<File></File>
+	</Attributes>
+	<Events>
+		<OnLeftClick></OnLeftClick>
+		<OnRightClick></OnRightClick>
+		<OnDblClick></OnDblClick>
+		<OnMouseOver>PreviewImage</OnMouseOver>
+	</Events>
+</accel>

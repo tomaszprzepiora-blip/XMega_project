@@ -1,0 +1,24 @@
+{
+  "domoticz": {
+    "host": "192.168.1.100",
+    "port": 8080,
+    "api": "http-json"
+  },
+  "buttons": [
+    { "id": 1, "label": "Salon", "type": "switch", "idx": 101, "defaultCommand": "Toggle" },
+    { "id": 2, "label": "Kuchnia", "type": "switch", "idx": 102, "defaultCommand": "Toggle" },
+    { "id": 3, "label": "Korytarz", "type": "switch", "idx": 103, "defaultCommand": "Toggle" },
+    { "id": 4, "label": "Biurko", "type": "switch", "idx": 104, "defaultCommand": "Toggle" },
+    { "id": 5, "label": "Noc", "type": "switch", "idx": 105, "defaultCommand": "Toggle" },
+    { "id": 6, "label": "All Off", "type": "group", "idx": [101, 102, 103, 104, 105], "defaultCommand": "Off" },
+    { "id": 7, "label": "Temp 1", "type": "temperature", "idx": 201 },
+    { "id": 8, "label": "Temp 2", "type": "temperature", "idx": 202 },
+    { "id": 9, "label": "Sync", "type": "sync", "idx": [201, 202, 203] }
+  ],
+  "temperatures": [
+    { "id": 1, "label": "Salon", "idx": 201 },
+    { "id": 2, "label": "Kuchnia", "idx": 202 },
+    { "id": 3, "label": "Zewn.", "idx": 203 }
+  ]
+}
+

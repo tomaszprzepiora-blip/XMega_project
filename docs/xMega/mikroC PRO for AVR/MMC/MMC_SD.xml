@@ -1,0 +1,13 @@
+<MMC_SD>
+	<Attributes>
+		<Url></Url>
+		<Image>xmega_MMC.JPG</Image>
+		<File></File>
+	</Attributes>
+	<Events>
+		<OnLeftClick></OnLeftClick>
+		<OnRightClick></OnRightClick>
+		<OnDblClick></OnDblClick>
+		<OnMouseOver>PreviewImage</OnMouseOver>
+	</Events>
+</MMC_SD>

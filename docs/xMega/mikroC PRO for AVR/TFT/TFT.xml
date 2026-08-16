@@ -1,0 +1,13 @@
+<TFT>
+	<Attributes>
+		<Url></Url>
+		<Image>mikromedia_TFT.JPG</Image>
+		<File></File>
+	</Attributes>
+	<Events>
+		<OnLeftClick></OnLeftClick>
+		<OnRightClick></OnRightClick>
+		<OnDblClick></OnDblClick>
+		<OnMouseOver>PreviewImage</OnMouseOver>
+	</Events>
+</TFT>

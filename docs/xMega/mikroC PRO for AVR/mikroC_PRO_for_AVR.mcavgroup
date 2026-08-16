@@ -1,0 +1,11 @@
+[PROJECTS]
+Count=7
+Project0=Accel\Accel_Test.mcpav
+Project1=MMC\MMC_Test.mcpav
+Project2=MP3\MP3_Test.mcpav
+Project3=Serial Flash\SF_Test.mcpav
+Project4=TFT\TFT.mcpav
+Project5=Touch Panel\Calculator.mcpav
+Project6=UART\Uart.mcpav
+[ActiveProject]
+Index=0
