@@ -1,3 +1,5 @@
 firmware/build/
 .DS_Store
 *.o
+.venv*/
+esp/esp-domoticz-bridge/domoticz_config.h

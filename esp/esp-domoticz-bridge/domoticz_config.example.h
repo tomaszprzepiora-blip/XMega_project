@@ -24,4 +24,3 @@ static const uint16_t TEMP_IDX[3] = {
 };
 
 #endif
-

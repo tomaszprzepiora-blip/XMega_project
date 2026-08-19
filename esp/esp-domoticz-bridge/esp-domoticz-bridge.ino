@@ -50,6 +50,11 @@ static const uint16_t TEMP_IDX[3] = {
 
 static String rxLine;
 
+static bool wifiReady()
+{
+  return WiFi.status() == WL_CONNECTED;
+}
+
 static String domoticzUrl(const String &path)
 {
   return String("http://") + DOMOTICZ_HOST + ":" + DOMOTICZ_PORT + path;
@@ -57,6 +62,10 @@ static String domoticzUrl(const String &path)
 
 static bool httpGet(const String &path, String *body)
 {
+  if (!wifiReady()) {
+    return false;
+  }
+
   WiFiClient client;
   HTTPClient http;
   String url = domoticzUrl(path);
@@ -65,6 +74,7 @@ static bool httpGet(const String &path, String *body)
     return false;
   }
 
+  http.setTimeout(8000);
   int code = http.GET();
   if (code < 200 || code >= 300) {
     http.end();
@@ -134,10 +144,11 @@ static bool sendTemperature(uint8_t tempId)
     return false;
   }
 
+  float temp = body.substring(start, end).toFloat();
   Serial.print("TEMP,");
   Serial.print(tempId);
   Serial.print(",");
-  Serial.println(body.substring(start, end));
+  Serial.println(temp, 1);
   return true;
 }
 
@@ -148,7 +159,7 @@ static void sendAllTemperatures()
       Serial.print("ERR,TEMP,");
       Serial.println(i);
     }
-    delay(60);
+    delay(250);
   }
 }
 
@@ -175,6 +186,16 @@ static void handleLine(String line)
 {
   line.trim();
   if (line.length() == 0) {
+    return;
+  }
+
+  if (line == "PING") {
+    Serial.println(wifiReady() ? "OK,PONG,WIFI" : "OK,PONG,NOWIFI");
+    return;
+  }
+
+  if (!wifiReady()) {
+    Serial.println("ERR,WIFI");
     return;
   }
 
@@ -211,15 +232,23 @@ void setup()
 {
   Serial.begin(115200);
   rxLine.reserve(80);
+  delay(100);
+  Serial.println("BOOT");
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-  while (WiFi.status() != WL_CONNECTED) {
+  uint32_t started = millis();
+  while (!wifiReady() && millis() - started < 20000UL) {
     delay(250);
   }
 
-  Serial.println("OK,WIFI");
+  if (wifiReady()) {
+    Serial.print("OK,WIFI,");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("ERR,WIFI");
+  }
 }
 
 void loop()
