@@ -2,12 +2,19 @@
 
 `esp-domoticz-bridge/esp-domoticz-bridge.ino` to szkic dla ESP8266 albo ESP32.
 
-Rola ESP:
+Rola ESP - w 100% odpowiada za komunikacje z Domoticz, bez zadnej wiedzy o
+"przyciskach" czy ukladzie ekranu (to zyje w `firmware/protocol/domoticz_map.h`
+po stronie XMEGA):
 
-- odbiera komendy tekstowe z XMEGA przez UART,
+- odbiera z XMEGA przez UART linie `idx:<idx>:<0|1>` (ustaw) albo
+  `idx:<idx>:?` (zapytaj),
 - laczy sie z Wi-Fi,
-- wysyla zapytania HTTP do Domoticza,
-- odsyla do XMEGA statusy i temperatury.
+- odsyla natychmiast `RCV,<idx>` (przed HTTP - potwierdzenie odbioru linii),
+- wysyla zapytanie HTTP do Domoticza dla podanego idx,
+- odsyla do XMEGA wynik: `idx:<idx>:<wartosc>` albo `ERR,IDX,<idx>`.
+
+Wbudowany LED (D1 mini: GPIO2) swieci sie na stale, gdy WiFi jest polaczone -
+prosty wskaznik stanu polaczenia widoczny bez podlaczania monitora portu.
 
 Przed wgraniem trzeba ustawic:
 
@@ -15,9 +22,7 @@ Przed wgraniem trzeba ustawic:
 - ustawic `WIFI_SSID`,
 - ustawic `WIFI_PASS`,
 - ustawic `DOMOTICZ_HOST`,
-- ustawic `DOMOTICZ_PORT`,
-- ustawic tablice `LIGHT_IDX`,
-- ustawic tablice `TEMP_IDX`.
+- ustawic `DOMOTICZ_PORT`.
 
 Domoticz JSON API dla swiatel:
 

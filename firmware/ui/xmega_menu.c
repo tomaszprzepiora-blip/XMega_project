@@ -37,11 +37,11 @@
  * previous 4-corner version: a bad "Sync" tap passed the old pairwise
  * check but still produced a calibration where only the top row worked).
  */
-#define CAL_LEFT_COL   0U /* Salon */
-#define CAL_MID_COL    1U /* Kuchnia */
-#define CAL_RIGHT_COL  2U /* Korytarz */
-#define CAL_TOP_ROW    0U /* Salon */
-#define CAL_MID_ROW    1U /* Biurko */
+#define CAL_LEFT_COL   0U /* Lozko Aga */
+#define CAL_MID_COL    1U /* Lozko Tomek */
+#define CAL_RIGHT_COL  2U /* Biurko */
+#define CAL_TOP_ROW    0U /* Lozko Aga */
+#define CAL_MID_ROW    1U /* Dock Station */
 #define CAL_BOTTOM_ROW 2U /* Temp 1 */
 
 /* UI_CONTROLS index for grid position (col, row), both 0..2. */

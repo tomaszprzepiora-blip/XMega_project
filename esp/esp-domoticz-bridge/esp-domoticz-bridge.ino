@@ -11,17 +11,21 @@
 /*
  * Bridge UART <-> Domoticz HTTP JSON API.
  *
+ * XMEGA nie zna nic poza idx urzadzenia Domoticz - caly mapping
+ * przycisk/ekran -> idx zyje w firmware XMEGA (firmware/protocol/domoticz_map.h).
+ * ESP jest czystym tlumaczem "idx + wartosc" <-> Domoticz HTTP API.
+ *
  * XMEGA wysyla linie, np.:
- *   BTN,1,TOGGLE
- *   BTN,6,OFF_ALL
- *   GET,TEMP,1
- *   GET,ALL
+ *   idx:32:1     ustaw przelacznik idx=32 na On
+ *   idx:32:0     ustaw przelacznik idx=32 na Off
+ *   idx:40:?     zapytaj o biezaca wartosc idx=40 (stan albo temperatura)
  *
  * ESP odpisuje liniami, np.:
- *   STATE,1,ON
- *   TEMP,1,21.6
- *   OK
- *   ERR,HTTP
+ *   RCV,32       natychmiastowe potwierdzenie odbioru linii (przed HTTP)
+ *   idx:32:1     potwierdzenie/odczyt stanu przelacznika (0/1) - wykonano
+ *   idx:40:216   odczyt temperatury w deci-stopniach (216 = 21.6 C) - wykonano
+ *   ERR,IDX,40   blad HTTP/Domoticz dla danego idx - wykonano z bledem
+ *   ERR,WIFI     brak polaczenia WiFi
  */
 
 #if __has_include("domoticz_config.h")
@@ -32,20 +36,6 @@ static const char WIFI_PASS[] = "TWOJE_HASLO";
 
 static const char DOMOTICZ_HOST[] = "192.168.1.100";
 static const uint16_t DOMOTICZ_PORT = 8080;
-
-static const uint16_t LIGHT_IDX[5] = {
-  101, /* 1 Salon */
-  102, /* 2 Kuchnia */
-  103, /* 3 Korytarz */
-  104, /* 4 Biurko */
-  105  /* 5 Noc */
-};
-
-static const uint16_t TEMP_IDX[3] = {
-  201, /* 1 Salon */
-  202, /* 2 Kuchnia */
-  203  /* 3 Zewn. */
-};
 #endif
 
 static String rxLine;
@@ -55,20 +45,21 @@ static bool wifiReady()
   return WiFi.status() == WL_CONNECTED;
 }
 
+static void updateWifiLed()
+{
+  /* Built-in LED (GPIO2 on D1 mini) is active-low: LOW turns it on. */
+  digitalWrite(LED_BUILTIN, wifiReady() ? LOW : HIGH);
+}
+
 static String domoticzUrl(const String &path)
 {
   return String("http://") + DOMOTICZ_HOST + ":" + DOMOTICZ_PORT + path;
 }
 
-static bool httpGet(const String &path, String *body)
+static bool httpGetOnce(const String &url, String *body)
 {
-  if (!wifiReady()) {
-    return false;
-  }
-
   WiFiClient client;
   HTTPClient http;
-  String url = domoticzUrl(path);
 
   if (!http.begin(client, url)) {
     return false;
@@ -89,31 +80,67 @@ static bool httpGet(const String &path, String *body)
   return true;
 }
 
-static bool switchLight(uint8_t buttonId, const char *command)
+static bool httpGet(const String &path, String *body)
 {
-  if (buttonId < 1 || buttonId > 5) {
+  String url;
+
+  if (!wifiReady()) {
     return false;
   }
 
-  uint16_t idx = LIGHT_IDX[buttonId - 1];
+  url = domoticzUrl(path);
+
+  /*
+   * Observed on hardware: Domoticz sometimes applies the change correctly
+   * (verified independently) even though ESP8266HTTPClient reports a
+   * failure here - a transient TCP/connection hiccup on the ESP8266 side,
+   * not a real request failure. A couple of quick retries clears it up
+   * without XMEGA ever seeing the false error.
+   */
+  for (uint8_t attempt = 0; attempt < 3; attempt++) {
+    if (httpGetOnce(url, body)) {
+      return true;
+    }
+    if (attempt < 2) {
+      delay(200);
+    }
+  }
+
+  return false;
+}
+
+static bool switchLight(uint16_t idx, const char *command)
+{
   String path = String("/json.htm?type=command&param=switchlight&idx=") +
                 idx + "&switchcmd=" + command;
 
   return httpGet(path, nullptr);
 }
 
-static bool sendTemperature(uint8_t tempId)
+static bool queryIdx(uint16_t idx)
 {
-  if (tempId < 1 || tempId > 3) {
-    return false;
-  }
-
   String body;
-  uint16_t idx = TEMP_IDX[tempId - 1];
   String path = String("/json.htm?type=command&param=getdevices&rid=") + idx;
 
   if (!httpGet(path, &body)) {
     return false;
+  }
+
+  int statusKey = body.indexOf("\"Status\"");
+  if (statusKey >= 0) {
+    int colon = body.indexOf(':', statusKey);
+    int quote1 = colon < 0 ? -1 : body.indexOf('"', colon + 1);
+    int quote2 = quote1 < 0 ? -1 : body.indexOf('"', quote1 + 1);
+    if (colon < 0 || quote1 < 0 || quote2 < 0) {
+      return false;
+    }
+
+    String status = body.substring(quote1 + 1, quote2);
+    Serial.print("idx:");
+    Serial.print(idx);
+    Serial.print(":");
+    Serial.println(status == "On" ? 1 : 0);
+    return true;
   }
 
   int key = body.indexOf("\"Temp\"");
@@ -145,41 +172,13 @@ static bool sendTemperature(uint8_t tempId)
   }
 
   float temp = body.substring(start, end).toFloat();
-  Serial.print("TEMP,");
-  Serial.print(tempId);
-  Serial.print(",");
-  Serial.println(temp, 1);
+  int deciTemp = (int)(temp * 10.0f + (temp >= 0 ? 0.5f : -0.5f));
+
+  Serial.print("idx:");
+  Serial.print(idx);
+  Serial.print(":");
+  Serial.println(deciTemp);
   return true;
-}
-
-static void sendAllTemperatures()
-{
-  for (uint8_t i = 1; i <= 3; i++) {
-    if (!sendTemperature(i)) {
-      Serial.print("ERR,TEMP,");
-      Serial.println(i);
-    }
-    delay(250);
-  }
-}
-
-static void handleButtonCommand(uint8_t id, const String &action)
-{
-  bool ok = false;
-
-  if (id >= 1 && id <= 5) {
-    ok = switchLight(id, action == "TOGGLE" ? "Toggle" : action.c_str());
-  } else if (id == 6 && action == "OFF_ALL") {
-    ok = true;
-    for (uint8_t i = 1; i <= 5; i++) {
-      if (!switchLight(i, "Off")) {
-        ok = false;
-      }
-      delay(80);
-    }
-  }
-
-  Serial.println(ok ? "OK" : "ERR,SWITCH");
 }
 
 static void handleLine(String line)
@@ -199,30 +198,54 @@ static void handleLine(String line)
     return;
   }
 
-  if (line.startsWith("BTN,")) {
-    int first = line.indexOf(',');
-    int second = line.indexOf(',', first + 1);
-    if (second < 0) {
-      Serial.println("ERR,BTN");
+  if (line.startsWith("idx:")) {
+    int firstColon = line.indexOf(':', 4);
+    if (firstColon < 0) {
+      Serial.println("ERR,UNKNOWN");
       return;
     }
 
-    uint8_t id = (uint8_t)line.substring(first + 1, second).toInt();
-    String action = line.substring(second + 1);
-    handleButtonCommand(id, action);
-    return;
-  }
+    uint16_t idx = (uint16_t)line.substring(4, firstColon).toInt();
+    String token = line.substring(firstColon + 1);
 
-  if (line.startsWith("GET,TEMP,")) {
-    uint8_t id = (uint8_t)line.substring(9).toInt();
-    Serial.println(sendTemperature(id) ? "OK" : "ERR,TEMP");
-    return;
-  }
+    if (token == "?") {
+      /*
+       * Ack receipt immediately, before the (possibly slow, up to 8s) HTTP
+       * call - lets XMEGA tell "ESP got the line" apart from "Domoticz is
+       * slow to answer" and retry the send if this never arrives.
+       */
+      Serial.print("RCV,");
+      Serial.println(idx);
+      if (!queryIdx(idx)) {
+        Serial.print("ERR,IDX,");
+        Serial.println(idx);
+      }
+      /*
+       * XMEGA can send several idx lines back to back (All Off, Sync) with
+       * no gap on the UART side. Without a small pause here, back-to-back
+       * HTTP requests occasionally fail because the ESP8266 has not yet
+       * released the previous connection - the old per-idx loops on this
+       * side used the same defensive delay (80-250 ms) for that reason.
+       */
+      delay(150);
+      return;
+    }
 
-  if (line == "GET,ALL") {
-    sendAllTemperatures();
-    Serial.println("OK");
-    return;
+    if (token == "0" || token == "1") {
+      Serial.print("RCV,");
+      Serial.println(idx);
+      if (switchLight(idx, token == "1" ? "On" : "Off")) {
+        Serial.print("idx:");
+        Serial.print(idx);
+        Serial.print(":");
+        Serial.println(token);
+      } else {
+        Serial.print("ERR,IDX,");
+        Serial.println(idx);
+      }
+      delay(150);
+      return;
+    }
   }
 
   Serial.println("ERR,UNKNOWN");
@@ -235,13 +258,29 @@ void setup()
   delay(100);
   Serial.println("BOOT");
 
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH); /* off until WiFi connects */
+
   WiFi.mode(WIFI_STA);
+#if defined(ESP8266)
+  /*
+   * Modem sleep (default) delays/drops packets between requests, which
+   * shows up as the first HTTP call after boot succeeding and every
+   * following call intermittently timing out (ERR,IDX) even though the
+   * same request works instantly from another host on the same network.
+   */
+  WiFi.setSleepMode(WIFI_NONE_SLEEP);
+#else
+  WiFi.setSleep(false);
+#endif
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
   uint32_t started = millis();
   while (!wifiReady() && millis() - started < 20000UL) {
     delay(250);
   }
+
+  updateWifiLed();
 
   if (wifiReady()) {
     Serial.print("OK,WIFI,");
@@ -253,6 +292,8 @@ void setup()
 
 void loop()
 {
+  updateWifiLed();
+
   while (Serial.available() > 0) {
     char ch = (char)Serial.read();
     if (ch == '\n') {

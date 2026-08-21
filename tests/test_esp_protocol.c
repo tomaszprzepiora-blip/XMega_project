@@ -27,24 +27,41 @@ int main(void)
     char command[24];
     esp_message_t message;
 
-    failures += require_int("parse TEMP", esp_protocol_parse_line("TEMP,2,19.8\r\n", &message), 1);
-    failures += require_int("TEMP type", message.type, ESP_MSG_TEMP);
-    failures += require_int("TEMP id", message.id, 2);
-    failures += require_int("TEMP value", message.temp_deci_c, 198);
+    failures += require_int("parse temp idx", esp_protocol_parse_line("idx:40:216\r\n", &message), 1);
+    failures += require_int("temp idx type", message.type, ESP_MSG_IDX_VALUE);
+    failures += require_int("temp idx idx", message.idx, 40);
+    failures += require_int("temp idx value", message.value, 216);
 
-    failures += require_int("parse STATE", esp_protocol_parse_line("STATE,1,ON\n", &message), 1);
-    failures += require_int("STATE type", message.type, ESP_MSG_STATE);
-    failures += require_int("STATE id", message.id, 1);
-    failures += require_int("STATE on", message.state_on, 1);
+    failures += require_int("parse switch idx", esp_protocol_parse_line("idx:32:1\n", &message), 1);
+    failures += require_int("switch idx type", message.type, ESP_MSG_IDX_VALUE);
+    failures += require_int("switch idx idx", message.idx, 32);
+    failures += require_int("switch idx value", message.value, 1);
 
-    esp_protocol_button_command(6, command, sizeof(command));
-    failures += require_string("button 6 command", command, "BTN,6,OFF_ALL\n");
+    failures += require_int("parse negative idx", esp_protocol_parse_line("idx:42:-5\n", &message), 1);
+    failures += require_int("negative idx value", message.value, -5);
 
-    esp_protocol_temp_command(3, command, sizeof(command));
-    failures += require_string("temp 3 command", command, "GET,TEMP,3\n");
+    failures += require_int("parse rcv", esp_protocol_parse_line("RCV,32\r\n", &message), 1);
+    failures += require_int("rcv type", message.type, ESP_MSG_RECEIVED);
+    failures += require_int("rcv idx", message.idx, 32);
 
-    esp_protocol_sync_command(command, sizeof(command));
-    failures += require_string("sync command", command, "GET,ALL\n");
+    failures += require_int("parse err idx", esp_protocol_parse_line("ERR,IDX,32\n", &message), 1);
+    failures += require_int("err idx type", message.type, ESP_MSG_ERROR);
+    failures += require_int("err idx idx", message.idx, 32);
+
+    failures += require_int("parse err wifi", esp_protocol_parse_line("ERR,WIFI\n", &message), 1);
+    failures += require_int("err wifi type", message.type, ESP_MSG_ERROR);
+
+    failures += require_int("parse ok pong", esp_protocol_parse_line("OK,PONG,WIFI\n", &message), 1);
+    failures += require_int("ok pong type", message.type, ESP_MSG_OK);
+
+    esp_protocol_set_command(32, 1, command, sizeof(command));
+    failures += require_string("set command on", command, "idx:32:1\n");
+
+    esp_protocol_set_command(32, 0, command, sizeof(command));
+    failures += require_string("set command off", command, "idx:32:0\n");
+
+    esp_protocol_query_command(40, command, sizeof(command));
+    failures += require_string("query command", command, "idx:40:?\n");
 
     if (failures != 0) {
         return 1;
@@ -53,4 +70,3 @@ int main(void)
     puts("esp_protocol tests OK");
     return 0;
 }
-

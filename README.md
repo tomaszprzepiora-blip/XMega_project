@@ -283,6 +283,127 @@ Rebuild + reflash po naprawie osi + 9-punktowej kalibracji + toggle:
 - flash przez PDI: zapis i weryfikacja `13056 bytes of flash verified`;
 - potwierdzone na sprzecie: kalibracja przez 9 przyciskow zapisuje sie ze zgodnymi grupami (rozrzut rzedu dziesiatek jednostek), wszystkie 9 przyciskow reaguja na dotyk (5 z trwalym stanem, 4 z mignieciem), Salon..Noc przelaczaja sie (wlacz/wylacz) pod kolejnymi dotykami.
 
+## Zmiana etykiet przelacznikow na realne idx Domoticza (2026-08-21)
+
+Zamieniono placeholdery przyciskow (`Salon..Noc`, idx `101..105`) na 5 realnych urzadzen z Domoticza (potwierdzone live przez `json.htm?type=command&param=getdevices`):
+
+- `1 Lozko Aga` (idx `32`), `2 Lozko Tomek` (idx `33`), `3 Biurko` (idx `34`, urzadzenie "Sypialnia Biurko"), `4 Dock Station` (idx `76`), `5 Salon Spr.` (idx `57`, urzadzenie "SALON SPRZET"). Wszystkie to `Light/Switch` typu `On/Off`, zgodne z komenda `Toggle`.
+- Temperatury (`TEMP_IDX` w `domoticz_config.h` bez zmian: `39/40/42`): trzeci slot mial etykiete "Kuchnia", ale idx `44` ("Temperatura kuchnia") jest w Domoticzu `Used=0` i martwy od `2025-01-04` - za zgoda uzytkownika trzeci slot zostal opisany jako "Salon" (idx `39`, dziala) zamiast pokazywac zamrozony odczyt pod mylaca etykieta. Etykieta srodkowego slotu poprawiona z bledego "Kuchnia" na "Sypialnia" (odpowiadala idx `40`, ale nazwa w kodzie byla przekrecona od poczatku tej funkcji).
+- Zaktualizowane pliki: `firmware/ui/xmega_ui_layout.h` (etykiety przyciskow), `firmware/ui/xmega_ui.c` (etykieta temperatury), `firmware/ui/xmega_menu.c` (komentarze przy stalych kalibracji), `esp/esp-domoticz-bridge/domoticz_config.h` (`LIGHT_IDX`), `ui/panel-preview.html` (makieta).
+- Etykiety bez polskich znakow - font na `lcd_ili9341.c::glyph_column()` rysuje tylko `0-9`, `A-Z`, `. : -` i spacje; kazdy inny znak (w tym `l/o/z/ó/ę`) rysuje sie jako blok-placeholder `0x49`.
+
+Rebuild + reflash:
+
+- testy hostowe: `xmega_ui tests OK`, `esp_protocol tests OK`;
+- rozmiar: `13090 bytes` flash (9.4%), `1387 bytes` RAM (16.9%), `10 bytes` EEPROM (kalibracja dotyku niezmieniona, bo `make flash` uzywa `-R .eeprom`);
+- dostep USB do `AVRISP mkII` w tej sesji wymagal wylaczonego sandboxa Bash-a (bez tego: `Error: found but could not access USB device usb (03eb:2104)`, identyczny blad jak w pierwszej sesji ponizej - tam obejsciem bylo `sudo`, tutaj wystarczyl dostep bez sandboxa);
+- flash przez PDI: zapis i weryfikacja `13090 bytes of flash verified`;
+- odczyt po flashu: `Device signature = 1E 97 4C`, `Vtarget = 3.3 V` - plytka odpowiada poprawnie.
+
+## Status "brak odpowiedzi ESP" na ekranie (2026-08-21)
+
+Po zmianie idx przelacznikow uzytkownik zglosil, ze przyciski na panelu przelaczaja urzadzenie w Domoticzu niekonsekwentnie ("czasem wlacza, ale generalnie nie"). Wczesniej brak odpowiedzi z ESP po wyslaniu komendy `BTN,...` byl niewidoczny na LCD - status zostawal na "UART -> ESP" bez zadnej wskazowki, czy link UART XMEGA<->ESP w ogole zyje.
+
+Dodano timeout w `firmware/app/main.c`: jesli po dotkniecie przycisku (kazde wywolanie `ui_touch_down()` zwracajace sukces) ESP nie odpowie zadna linia (`OK`/`ERR`/`STATE`/`TEMP`) w ciagu ok. 2 s (`ESP_WAIT_TIMEOUT_TICKS = 200` przy petli 10 ms/tik), status na ekranie zmienia sie na `ESP: BRAK ODP.`. To ma pomoc odroznic na sprzecie, bez podlaczania konsoli debug, czy problem jest po stronie UART/ESP (brak odpowiedzi) czy po stronie samego urzadzenia w Domoticzu (ESP odpowiada `OK`, ale przelacznik i tak sie nie zmienia).
+
+Rebuild + reflash:
+
+- testy hostowe: `xmega_ui tests OK`, `esp_protocol tests OK`;
+- rozmiar: `13160 bytes` flash (9.4%), `1403 bytes` RAM (17.1%), `10 bytes` EEPROM (kalibracja bez zmian);
+- flash przez PDI: zapis i weryfikacja `13160 bytes of flash verified`.
+
+## Protokol XMEGA<->ESP oparty na idx Domoticza (2026-08-21)
+
+Przeprojektowano protokol UART tak, zeby ESP w 100% odpowiadal za komunikacje
+z Domoticz, a XMEGA znal idx urzadzen wprost i wysylal je jednym, spojnym
+formatem: `idx:<idx>:1`/`idx:<idx>:0` (ustaw przelacznik), `idx:<idx>:?`
+(zapytaj o wartosc), odpowiedz ESP `idx:<idx>:<wartosc>` albo
+`ERR,IDX,<idx>`. Zastapiono nim stare tokeny `BTN,`/`GET,`/`STATE,`/`TEMP,`.
+
+- Mapowanie przycisk/slot -> idx przeniesiono z ESP (`domoticz_config.h`,
+  tablice `LIGHT_IDX`/`TEMP_IDX`) do nowego pliku `firmware/protocol/domoticz_map.h`
+  po stronie XMEGA (`UI_SWITCH_IDX[5]`, `UI_TEMP_IDX[3]`, z realnymi idx
+  `32/33/34/76/57` i `39/40/42`) - ESP nie zna juz zadnej logiki "przyciskow".
+- `All Off` (przycisk 6) wysyla teraz po kolei 5 linii `idx:<idx>:0` (po jednej
+  na kazdy przelacznik) zamiast jednej zbiorczej komendy `BTN,6,OFF_ALL`.
+- `Sync` (przycisk 9) odswieza teraz takze stany przelacznikow, nie tylko
+  temperatury - wysyla 8 zapytan `idx:<idx>:?` (5 przelacznikow + 3 czujniki).
+- Zaktualizowane pliki: `firmware/protocol/esp_protocol.h/.c` (nowy typ
+  komunikatu i generatory), `firmware/protocol/domoticz_map.h` (nowy),
+  `firmware/ui/xmega_ui.c`, `esp/esp-domoticz-bridge/esp-domoticz-bridge.ino`,
+  `esp/esp-domoticz-bridge/domoticz_config.h`/`.example.h` (usuniete
+  `LIGHT_IDX`/`TEMP_IDX`), testy `tests/test_esp_protocol.c`,
+  `tests/test_xmega_ui.c`, dokumentacja (`docs/project/architektura-firmware.md`,
+  `esp/README.md`, `docs/project/domoticz-map.example.json`).
+
+Rebuild + testy:
+
+- testy hostowe: `xmega_ui tests OK`, `esp_protocol tests OK`;
+- build AVR (`make -C firmware`) przechodzi bez warningow (`-Wall -Wextra`).
+
+## Pierwszy test na zywym ESP (D1 mini) + niezawodnosc HTTP (2026-08-22)
+
+Po wgraniu przeprojektowanego protokolu na fizyczny ESP8266 (D1 mini,
+polaczony wlasnym USB do komputera, niezaleznie od XMEGA) przetestowano go
+bezposrednio przez port szeregowy (`idx:<idx>:?`/`idx:<idx>:<0|1>`), bez
+posredniczenia XMEGA:
+
+- Pierwsza komenda po starcie (`idx:32:1`, zapalenie swiatla) zadzialala
+  natychmiast. Kolejne wywolania (odczyty temperatur, potem `idx:32:0`)
+  zaczely sporadycznie konczyc sie `ERR,IDX,<idx>`, mimo ze te same zapytania
+  wyslane bezposrednio z komputera do tego samego Domoticza dzialaly zawsze
+  szybko i bezblednie - wskazywalo to na problem po stronie ESP, nie w
+  protokole ani w Domoticzu.
+- Przyczyna: domyslny tryb oszczedzania energii WiFi na ESP8266 (modem
+  sleep) opoznia/gubi pakiety po pierwszym polaczeniu. Naprawiono w
+  `esp-domoticz-bridge.ino::setup()`: `WiFi.setSleepMode(WIFI_NONE_SLEEP)` na
+  ESP8266 (`WiFi.setSleep(false)` na ESP32).
+- Dodatkowo dodano `delay(150)` po kazdej obsluzonej linii `idx:...` w
+  `handleLine()` - XMEGA moze wyslac kilka linii pod rzad (All Off, Sync) bez
+  przerwy na UART, a bez tego opoznienia kolejne polaczenia HTTP czasem nie
+  zdazyly sie zwolnic (ten sam wzorzec co stare `delay(80..250)` w
+  usunietych petlach po stronie ESP).
+- Po obu poprawkach: pelny "burst" 8 zapytan pod rzad (5 przelacznikow + 3
+  czujniki, symulacja przycisku Sync) wyslanych bez zadnej przerwy przeszedl
+  bezblednie za pierwszym razem.
+- Dodano tez wbudowany LED (GPIO2 na D1 mini, aktywny stanem niskim) jako
+  prosty wskaznik polaczenia WiFi - swieci na stale gdy `wifiReady()`,
+  sprawdzane w `setup()` i w kazdej iteracji `loop()`.
+
+## Dwufazowe potwierdzenie komend + ponawianie wysylki (2026-08-22)
+
+Zaobserwowano na sprzecie, ze pojedyncza komenda czasem nie doczekala sie
+odpowiedzi w krotkim oknie (kilka sekund), a druga proba tej samej komendy
+zadzialala - bez sposobu odroznienia "ESP nie dostal linii" od "ESP dostal,
+ale Domoticz wolno odpowiada". Wprowadzono dwuetapowe potwierdzenie:
+
+- ESP odsyla `RCV,<idx>` natychmiast po odebraniu i sparsowaniu linii
+  `idx:...`, zanim wywola (potencjalnie wolne, do ~8s) zadanie HTTP do
+  Domoticza; dopiero po nim wysyla finalny wynik `idx:<idx>:<wartosc>` albo
+  `ERR,IDX,<idx>` jak dotychczas.
+- XMEGA (`firmware/app/main.c`) rozroznia teraz dwie fazy oczekiwania:
+  `ESP_PHASE_WAIT_RCV` (krotki timeout `ESP_RCV_TIMEOUT_TICKS` ~400ms - brak
+  `RCV,` w tym czasie oznacza problem z samym UART/ESP, wiec ta sama komenda
+  jest wysylana ponownie, do `ESP_MAX_SEND_ATTEMPTS = 3` razy) i
+  `ESP_PHASE_WAIT_RESULT` (dluzszy timeout `ESP_RESULT_TIMEOUT_TICKS` ~8.5s
+  na finalny wynik po otrzymaniu `RCV,`, bez ponawiania - ponowna wysylka nie
+  pomoze, jesli problem jest po stronie Domoticza).
+- Mechanizm dotyczy tylko komend pojedynczych (przelaczniki 1-5, Temp 1/2) -
+  `ui_state_t` ma nowe pole `pending_command`/`pending_retryable`
+  (`firmware/ui/xmega_ui.c`/`.h`) ustawiane przy takim dotyku. All Off/Sync
+  wysylaja kilka linii na raz i nie sa objete retry (ESP przetwarza je
+  sekwencyjnie/blokujaco, wiec RCV drugiej linii i tak przyszloby dopiero po
+  zakonczeniu HTTP pierwszej - retry nic by tu nie dal).
+- Zaktualizowane pliki: `firmware/protocol/esp_protocol.h/.c` (nowy typ
+  `ESP_MSG_RECEIVED`, parsowanie `RCV,<idx>`), `esp/esp-domoticz-bridge/esp-domoticz-bridge.ino`
+  (wysylka `RCV,` przed HTTP), `firmware/ui/xmega_ui.h/.c`, `firmware/app/main.c`,
+  testy `tests/test_esp_protocol.c`/`tests/test_xmega_ui.c`.
+
+Rebuild + testy:
+
+- testy hostowe: `xmega_ui tests OK`, `esp_protocol tests OK`;
+- build AVR (`make -C firmware`) przechodzi bez warningow.
+
 ## Nastepny test po stronie sprzetu
 
 1. Upewnic sie, ze plytka mikromedia jest zasilona i AVRISP mkII widzi target power. Dioda statusu AVRISP mkII powinna byc zielona po podlaczeniu targetu.
@@ -325,6 +446,7 @@ sudo avrdude -c avrispmkII -p x128a1d -P usb -v
 - Konsola diagnostyczna (USB-UART/FT232RL): `firmware/transport/uart_debug.c`
 - Menu na urzadzeniu (kalibracja dotyku i przyszle funkcje): `firmware/ui/xmega_menu.c`
 - Protokol tekstowy ESP: `firmware/protocol/esp_protocol.c`
+- Mapowanie idx Domoticza (zrodlo prawdy): `firmware/protocol/domoticz_map.h`
 - Szkic mostka ESP -> Domoticz: `esp/esp-domoticz-bridge/esp-domoticz-bridge.ino`
 - Przykladowa konfiguracja ESP: `esp/esp-domoticz-bridge/domoticz_config.example.h`
 - Przykladowe mapowanie `idx`: `docs/project/domoticz-map.example.json`

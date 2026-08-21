@@ -29,12 +29,12 @@ typedef struct {
 } ui_control_t;
 
 static const ui_control_t UI_CONTROLS[UI_CONTROL_COUNT] = {
-    { 1, UI_KIND_BUTTON,  6, 100, 100, 40, "Salon" },
-    { 2, UI_KIND_BUTTON,110, 100, 100, 40, "Kuchnia" },
-    { 3, UI_KIND_BUTTON,214, 100, 100, 40, "Korytarz" },
+    { 1, UI_KIND_BUTTON,  6, 100, 100, 40, "Lozko Aga" },
+    { 2, UI_KIND_BUTTON,110, 100, 100, 40, "Lozko Tomek" },
+    { 3, UI_KIND_BUTTON,214, 100, 100, 40, "Biurko" },
 
-    { 4, UI_KIND_BUTTON,  6, 146, 100, 40, "Biurko" },
-    { 5, UI_KIND_BUTTON,110, 146, 100, 40, "Noc" },
+    { 4, UI_KIND_BUTTON,  6, 146, 100, 40, "Dock Station" },
+    { 5, UI_KIND_BUTTON,110, 146, 100, 40, "Salon Spr." },
     { 6, UI_KIND_BUTTON,214, 146, 100, 40, "All Off" },
 
     { 7, UI_KIND_BUTTON,  6, 192, 100, 40, "Temp 1" },

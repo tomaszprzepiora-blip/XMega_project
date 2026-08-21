@@ -30,6 +30,30 @@
 #define MENU_HOLD_TICKS 8U
 #define MENU_GESTURE_RAW_Y_MIN 2200U
 
+/*
+ * Dwie fazy oczekiwania na odpowiedz ESP po wyslaniu pojedynczej komendy
+ * (przelaczniki, Temp 1/2 - patrz ui.pending_retryable w xmega_ui.c):
+ *
+ * 1. WAIT_RCV: czekamy na natychmiastowe "RCV,<idx>" (sam UART + parsowanie
+ *    linii przez ESP, bez zadnego HTTP) - to powinno przyjsc w ulamku
+ *    sekundy. Jesli nie przyjdzie w ESP_RCV_TIMEOUT_TICKS, wysylamy
+ *    ta sama linie ponownie (do ESP_MAX_SEND_ATTEMPTS razy), zanim uznamy
+ *    link UART<->ESP za martwy.
+ * 2. WAIT_RESULT: RCV przyszlo, wiec ESP zyje i woła Domoticza przez HTTP
+ *    (to moze potrwac do ~8 s, patrz http.setTimeout() w esp-domoticz-
+ *    bridge.ino) - czekamy na finalny wynik dluzej i bez ponawiania
+ *    (ponowna wysylka nie pomoze, jesli problem jest po stronie Domoticza).
+ *
+ * Petla glowna spi 10 ms/iteracje, wiec tiki przeliczaja sie na ms razy 10.
+ */
+#define ESP_RCV_TIMEOUT_TICKS 40U
+#define ESP_MAX_SEND_ATTEMPTS 3U
+#define ESP_RESULT_TIMEOUT_TICKS 850U
+
+#define ESP_PHASE_IDLE 0U
+#define ESP_PHASE_WAIT_RCV 1U
+#define ESP_PHASE_WAIT_RESULT 2U
+
 int main(void)
 {
     ui_state_t ui;
@@ -39,6 +63,9 @@ int main(void)
     uint8_t menu_gap_ticks = 0;
     uint16_t backlight_idle_ticks = 0;
     uint8_t backlight_on = 1;
+    uint8_t esp_phase = ESP_PHASE_IDLE;
+    uint8_t esp_send_attempts = 0;
+    uint16_t esp_wait_ticks = 0;
 
     /*
      * Kolejnosc startu jest celowo prosta:
@@ -76,7 +103,31 @@ int main(void)
 
     for (;;) {
         if (uart_esp_read_line(esp_line, sizeof(esp_line))) {
-            ui_apply_esp_line(&MIKROMEDIA_UI_DRIVER, &ui, esp_line);
+            char dbg[64];
+            uint8_t applied;
+
+            /*
+             * Log every raw line actually received from the ESP on the debug
+             * console, whether or not it parses. If nothing ever shows up
+             * here again after a hang, the ESP stopped talking (crash/reset
+             * on its end); if lines do show up but garbled or unparsed, the
+             * UART link itself is losing/corrupting bytes.
+             */
+            (void)snprintf(dbg, sizeof(dbg), "esp<<: %s\r\n", esp_line);
+            uart_debug_send(dbg);
+
+            applied = ui_apply_esp_line(&MIKROMEDIA_UI_DRIVER, &ui, esp_line);
+            if (applied == 2) {
+                /* RCV ack: ESP is alive, stop retrying and wait for Domoticz. */
+                if (esp_phase == ESP_PHASE_WAIT_RCV) {
+                    esp_phase = ESP_PHASE_WAIT_RESULT;
+                    esp_wait_ticks = 0;
+                }
+            } else if (applied == 1) {
+                esp_phase = ESP_PHASE_IDLE;
+            } else {
+                uart_debug_send("esp<<: unparsed\r\n");
+            }
         }
 
         if (touch_resistive_poll(&touch)) {
@@ -106,7 +157,22 @@ int main(void)
                     hit = ui_hit_test(touch.x, touch.y);
                     (void)snprintf(line, sizeof(line), "touch: x=%u y=%u hit=%d\r\n", touch.x, touch.y, hit);
                     uart_debug_send(line);
-                    ui_touch_down(&MIKROMEDIA_UI_DRIVER, &ui, touch.x, touch.y);
+                    if (ui_touch_down(&MIKROMEDIA_UI_DRIVER, &ui, touch.x, touch.y)) {
+                        /*
+                         * Only single-command touches (switches, Temp 1/2)
+                         * are retried on a missing RCV - All Off/Sync fire
+                         * several lines at once with no single command to
+                         * resend, so they just get the longer result-wait
+                         * window without retry (ui.pending_retryable is 0).
+                         */
+                        if (ui.pending_retryable) {
+                            esp_phase = ESP_PHASE_WAIT_RCV;
+                            esp_send_attempts = 1;
+                        } else {
+                            esp_phase = ESP_PHASE_WAIT_RESULT;
+                        }
+                        esp_wait_ticks = 0;
+                    }
 
                     /*
                      * Salon/Kuchnia/Korytarz/Biurko/Noc keep a persistent
@@ -143,6 +209,22 @@ int main(void)
         if (menu_hold_count > 0 && ++menu_gap_ticks > 40U) {
             menu_hold_count = 0;
             menu_gap_ticks = 0;
+        }
+
+        if (esp_phase == ESP_PHASE_WAIT_RCV && ++esp_wait_ticks >= ESP_RCV_TIMEOUT_TICKS) {
+            esp_wait_ticks = 0;
+            if (esp_send_attempts < ESP_MAX_SEND_ATTEMPTS) {
+                esp_send_attempts++;
+                MIKROMEDIA_UI_DRIVER.uart_send(ui.pending_command);
+            } else {
+                esp_phase = ESP_PHASE_IDLE;
+                (void)snprintf(ui.status, sizeof(ui.status), "ESP: BRAK ODP.");
+                ui_draw_status(&MIKROMEDIA_UI_DRIVER, &ui);
+            }
+        } else if (esp_phase == ESP_PHASE_WAIT_RESULT && ++esp_wait_ticks >= ESP_RESULT_TIMEOUT_TICKS) {
+            esp_phase = ESP_PHASE_IDLE;
+            (void)snprintf(ui.status, sizeof(ui.status), "ESP: BRAK WYNIKU");
+            ui_draw_status(&MIKROMEDIA_UI_DRIVER, &ui);
         }
 
         _delay_ms(10);

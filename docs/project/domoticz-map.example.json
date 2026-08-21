@@ -1,24 +1,24 @@
 {
+  "_uwaga": "Ten plik jest tylko dokumentacja/przyklad. Zrodlem prawdy w firmware jest firmware/protocol/domoticz_map.h (UI_SWITCH_IDX, UI_TEMP_IDX) - XMEGA wysyla idx wprost do ESP jako 'idx:<idx>:<0|1>' (ustaw) albo 'idx:<idx>:?' (zapytaj), patrz docs/project/architektura-firmware.md.",
   "domoticz": {
-    "host": "192.168.1.100",
+    "host": "192.168.10.249",
     "port": 8080,
     "api": "http-json"
   },
   "buttons": [
-    { "id": 1, "label": "Salon", "type": "switch", "idx": 101, "defaultCommand": "Toggle" },
-    { "id": 2, "label": "Kuchnia", "type": "switch", "idx": 102, "defaultCommand": "Toggle" },
-    { "id": 3, "label": "Korytarz", "type": "switch", "idx": 103, "defaultCommand": "Toggle" },
-    { "id": 4, "label": "Biurko", "type": "switch", "idx": 104, "defaultCommand": "Toggle" },
-    { "id": 5, "label": "Noc", "type": "switch", "idx": 105, "defaultCommand": "Toggle" },
-    { "id": 6, "label": "All Off", "type": "group", "idx": [101, 102, 103, 104, 105], "defaultCommand": "Off" },
-    { "id": 7, "label": "Temp 1", "type": "temperature", "idx": 201 },
-    { "id": 8, "label": "Temp 2", "type": "temperature", "idx": 202 },
-    { "id": 9, "label": "Sync", "type": "sync", "idx": [201, 202, 203] }
+    { "id": 1, "label": "Lozko Aga", "type": "switch", "idx": 32 },
+    { "id": 2, "label": "Lozko Tomek", "type": "switch", "idx": 33 },
+    { "id": 3, "label": "Biurko", "type": "switch", "idx": 34 },
+    { "id": 4, "label": "Dock Station", "type": "switch", "idx": 76 },
+    { "id": 5, "label": "Salon Spr.", "type": "switch", "idx": 57 },
+    { "id": 6, "label": "All Off", "type": "group", "idx": [32, 33, 34, 76, 57] },
+    { "id": 7, "label": "Temp 1", "type": "temperature", "idx": 39 },
+    { "id": 8, "label": "Temp 2", "type": "temperature", "idx": 40 },
+    { "id": 9, "label": "Sync", "type": "sync", "idx": [32, 33, 34, 76, 57, 39, 40, 42] }
   ],
   "temperatures": [
-    { "id": 1, "label": "Salon", "idx": 201 },
-    { "id": 2, "label": "Kuchnia", "idx": 202 },
-    { "id": 3, "label": "Zewn.", "idx": 203 }
+    { "id": 1, "label": "Salon", "idx": 39 },
+    { "id": 2, "label": "Sypialnia", "idx": 40 },
+    { "id": 3, "label": "Zewn.", "idx": 42 }
   ]
 }
-

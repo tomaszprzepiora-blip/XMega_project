@@ -1,5 +1,6 @@
 #include "xmega_ui.h"
 #include "esp_protocol.h"
+#include "domoticz_map.h"
 
 #include <stddef.h>
 #include <stdio.h>
@@ -67,6 +68,8 @@ void ui_init(ui_state_t *state)
     state->temp_deci_c[1] = 204;
     state->temp_deci_c[2] = 148;
     copy_status(state, "ESP UART: init");
+    state->pending_command[0] = '\0';
+    state->pending_retryable = 0;
 
     for (i = 0; i < UI_CONTROL_COUNT; i++) {
         state->control_state[i] = UI_CONTROL_OFF;
@@ -91,7 +94,7 @@ void ui_draw_status(const ui_driver_t *driver, const ui_state_t *state)
     driver->draw_text(8, 66, value, UI_COLOR_TEXT);
 
     format_temp(value, sizeof(value), state->temp_deci_c[1]);
-    driver->draw_text(112, 52, "Kuchnia", UI_COLOR_MUTED);
+    driver->draw_text(112, 52, "Sypialnia", UI_COLOR_MUTED);
     driver->draw_text(112, 66, value, UI_COLOR_TEXT);
 
     format_temp(value, sizeof(value), state->temp_deci_c[2]);
@@ -138,6 +141,7 @@ uint8_t ui_touch_down(const ui_driver_t *driver, ui_state_t *state, uint16_t x, 
     char command[24];
     int8_t hit;
     uint8_t id;
+    uint8_t i;
 
     if (state == NULL) {
         return 0;
@@ -149,29 +153,54 @@ uint8_t ui_touch_down(const ui_driver_t *driver, ui_state_t *state, uint16_t x, 
     }
 
     id = UI_CONTROLS[hit].id;
+    copy_status(state, "UART -> ESP");
+
     if (id <= 5) {
         /*
          * Local optimistic toggle: press when off -> shows as pending-on;
          * press again (whether still pending or already confirmed on by an
-         * ESP STATE message) -> goes back off. Without this, every press
+         * ESP idx message) -> goes back off. Without this, every press
          * just set the same "on" state again, so a lit button could never
          * be turned back off from the panel itself.
          */
-        state->control_state[hit] = (state->control_state[hit] == UI_CONTROL_OFF)
-                                         ? UI_CONTROL_PENDING
-                                         : UI_CONTROL_OFF;
-    }
-
-    copy_status(state, "UART -> ESP");
-    if (driver != NULL && driver->uart_send != NULL) {
-        if (id <= 6) {
-            esp_protocol_button_command(id, command, sizeof(command));
-        } else if (id <= 8) {
-            esp_protocol_temp_command((uint8_t)(id - 6), command, sizeof(command));
-        } else {
-            esp_protocol_sync_command(command, sizeof(command));
+        uint8_t new_on = (state->control_state[hit] == UI_CONTROL_OFF) ? 1 : 0;
+        state->control_state[hit] = new_on ? UI_CONTROL_PENDING : UI_CONTROL_OFF;
+        state->pending_retryable = 1;
+        if (driver != NULL && driver->uart_send != NULL) {
+            esp_protocol_set_command(UI_SWITCH_IDX[hit], new_on, state->pending_command, sizeof(state->pending_command));
+            driver->uart_send(state->pending_command);
         }
-        driver->uart_send(command);
+    } else if (id == 6) {
+        /* All Off: turn off every known switch, one idx command per line.
+         * Not retried - see pending_retryable comment in xmega_ui.h. */
+        state->pending_retryable = 0;
+        for (i = 0; i < UI_SWITCH_COUNT; i++) {
+            state->control_state[i] = UI_CONTROL_OFF;
+            if (driver != NULL && driver->uart_send != NULL) {
+                esp_protocol_set_command(UI_SWITCH_IDX[i], 0, command, sizeof(command));
+                driver->uart_send(command);
+            }
+            ui_draw_control(driver, state, i);
+        }
+    } else if (id <= 8) {
+        state->pending_retryable = 1;
+        if (driver != NULL && driver->uart_send != NULL) {
+            esp_protocol_query_command(UI_TEMP_IDX[id - 7], state->pending_command, sizeof(state->pending_command));
+            driver->uart_send(state->pending_command);
+        }
+    } else {
+        /* Sync: refresh every known switch and sensor. Not retried. */
+        state->pending_retryable = 0;
+        if (driver != NULL && driver->uart_send != NULL) {
+            for (i = 0; i < UI_SWITCH_COUNT; i++) {
+                esp_protocol_query_command(UI_SWITCH_IDX[i], command, sizeof(command));
+                driver->uart_send(command);
+            }
+            for (i = 0; i < UI_TEMP_COUNT; i++) {
+                esp_protocol_query_command(UI_TEMP_IDX[i], command, sizeof(command));
+                driver->uart_send(command);
+            }
+        }
     }
 
     ui_draw_status(driver, state);
@@ -183,7 +212,7 @@ uint8_t ui_touch_down(const ui_driver_t *driver, ui_state_t *state, uint16_t x, 
 uint8_t ui_apply_esp_line(const ui_driver_t *driver, ui_state_t *state, const char *line)
 {
     esp_message_t message;
-    uint8_t id;
+    uint8_t i;
 
     if (state == NULL || line == NULL) {
         return 0;
@@ -194,26 +223,30 @@ uint8_t ui_apply_esp_line(const ui_driver_t *driver, ui_state_t *state, const ch
     }
 
     switch (message.type) {
-    case ESP_MSG_TEMP:
-        id = (uint8_t)(message.id - 1);
-        if (id < 3) {
-            state->temp_deci_c[id] = message.temp_deci_c;
-            copy_status(state, "TEMP update");
-            ui_draw_status(driver, state);
-            return 1;
+    case ESP_MSG_IDX_VALUE:
+        for (i = 0; i < UI_SWITCH_COUNT; i++) {
+            if (UI_SWITCH_IDX[i] == message.idx) {
+                state->control_state[i] = message.value ? UI_CONTROL_ON : UI_CONTROL_OFF;
+                copy_status(state, "STATE update");
+                ui_draw_status(driver, state);
+                ui_draw_control(driver, state, i);
+                return 1;
+            }
+        }
+        for (i = 0; i < UI_TEMP_COUNT; i++) {
+            if (UI_TEMP_IDX[i] == message.idx) {
+                state->temp_deci_c[i] = message.value;
+                copy_status(state, "TEMP update");
+                ui_draw_status(driver, state);
+                return 1;
+            }
         }
         break;
 
-    case ESP_MSG_STATE:
-        id = (uint8_t)(message.id - 1);
-        if (id < UI_CONTROL_COUNT) {
-            state->control_state[id] = message.state_on ? UI_CONTROL_ON : UI_CONTROL_OFF;
-            copy_status(state, "STATE update");
-            ui_draw_status(driver, state);
-            ui_draw_control(driver, state, id);
-            return 1;
-        }
-        break;
+    case ESP_MSG_RECEIVED:
+        copy_status(state, "ESP: PRZYJETO");
+        ui_draw_status(driver, state);
+        return 2;
 
     case ESP_MSG_OK:
         copy_status(state, "ESP OK");
@@ -221,6 +254,13 @@ uint8_t ui_apply_esp_line(const ui_driver_t *driver, ui_state_t *state, const ch
         return 1;
 
     case ESP_MSG_ERROR:
+        for (i = 0; i < UI_SWITCH_COUNT; i++) {
+            if (UI_SWITCH_IDX[i] == message.idx) {
+                state->control_state[i] = UI_CONTROL_ERROR;
+                ui_draw_control(driver, state, i);
+                break;
+            }
+        }
         copy_status(state, "ESP ERR");
         ui_draw_status(driver, state);
         return 1;

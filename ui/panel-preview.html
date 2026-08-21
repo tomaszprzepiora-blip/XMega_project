@@ -163,6 +163,7 @@
       background: #11161d;
       color: var(--muted);
       font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
     }
   </style>
 </head>
@@ -181,20 +182,20 @@
             </div>
             <div class="temps">
               <div class="temp"><span>Salon</span><strong id="t1">21.6</strong></div>
-              <div class="temp"><span>Kuchnia</span><strong id="t2">20.4</strong></div>
+              <div class="temp"><span>Sypialnia</span><strong id="t2">20.4</strong></div>
               <div class="temp"><span>Zewn.</span><strong id="t3">14.8</strong></div>
             </div>
           </section>
           <section class="controls">
-            <button data-cmd="BTN,1,TOGGLE">Salon</button>
-            <button data-cmd="BTN,2,TOGGLE">Kuchnia</button>
-            <button data-cmd="BTN,3,TOGGLE">Korytarz</button>
-            <button data-cmd="BTN,4,TOGGLE">Biurko</button>
-            <button data-cmd="BTN,5,TOGGLE">Noc</button>
-            <button class="warn" data-cmd="BTN,6,OFF_ALL">All Off</button>
-            <button data-cmd="GET,TEMP,1">Temp 1</button>
-            <button data-cmd="GET,TEMP,2">Temp 2</button>
-            <button class="sync" data-cmd="GET,ALL">Sync</button>
+            <button data-idx="32">Lozko Aga</button>
+            <button data-idx="33">Lozko Tomek</button>
+            <button data-idx="34">Biurko</button>
+            <button data-idx="76">Dock Station</button>
+            <button data-idx="57">Salon Spr.</button>
+            <button class="warn" data-cmd="all-off">All Off</button>
+            <button data-cmd="idx:39:?">Temp 1</button>
+            <button data-cmd="idx:40:?">Temp 2</button>
+            <button class="sync" data-cmd="sync">Sync</button>
           </section>
         </div>
       </div>
@@ -206,7 +207,8 @@
     const screen = document.getElementById('screen');
     const stage = document.getElementById('stage');
     const log = document.getElementById('log');
-    const toggles = new Set(['BTN,1,TOGGLE', 'BTN,2,TOGGLE', 'BTN,3,TOGGLE', 'BTN,4,TOGGLE', 'BTN,5,TOGGLE']);
+    const switchButtons = document.querySelectorAll('button[data-idx]');
+    const tempIdx = [39, 40, 42];
 
     function fit() {
       const rect = screen.getBoundingClientRect();
@@ -214,13 +216,32 @@
       stage.style.transform = `scale(${scale})`;
     }
 
-    for (const button of document.querySelectorAll('button')) {
+    for (const button of switchButtons) {
       button.addEventListener('click', () => {
-        const cmd = button.dataset.cmd;
-        if (toggles.has(cmd)) {
-          button.classList.toggle('on');
-        }
-        log.textContent = `UART -> ESP: ${cmd}`;
+        const idx = button.dataset.idx;
+        const on = !button.classList.contains('on');
+        button.classList.toggle('on', on);
+        log.textContent = `UART -> ESP: idx:${idx}:${on ? 1 : 0}`;
+      });
+    }
+
+    document.querySelector('button[data-cmd="all-off"]').addEventListener('click', () => {
+      const lines = [];
+      for (const button of switchButtons) {
+        button.classList.remove('on');
+        lines.push(`idx:${button.dataset.idx}:0`);
+      }
+      log.textContent = `UART -> ESP:\n${lines.join('\n')}`;
+    });
+
+    document.querySelector('button[data-cmd="sync"]').addEventListener('click', () => {
+      const idx = [...switchButtons].map((b) => b.dataset.idx).concat(tempIdx);
+      log.textContent = `UART -> ESP:\n${idx.map((i) => `idx:${i}:?`).join('\n')}`;
+    });
+
+    for (const button of document.querySelectorAll('button[data-cmd]:not([data-cmd="all-off"]):not([data-cmd="sync"])')) {
+      button.addEventListener('click', () => {
+        log.textContent = `UART -> ESP: ${button.dataset.cmd}`;
       });
     }
 

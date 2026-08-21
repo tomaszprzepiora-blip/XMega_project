@@ -72,14 +72,22 @@ int main(void)
     failures += require_int("button 9 hit", ui_hit_test(260, 200), 8);
 
     failures += require_int("touch button 1", ui_touch_down(&driver, &state, 8, 102), 1);
-    failures += require_string("button 1 command", last_uart, "BTN,1,TOGGLE\n");
+    failures += require_string("button 1 command", last_uart, "idx:32:1\n");
     failures += require_int("button 1 pending", state.control_state[0], UI_CONTROL_PENDING);
+    failures += require_int("button 1 retryable", state.pending_retryable, 1);
+    failures += require_string("button 1 pending command", state.pending_command, "idx:32:1\n");
 
-    failures += require_int("apply state", ui_apply_esp_line(&driver, &state, "STATE,1,ON\r\n"), 1);
+    failures += require_int("apply rcv", ui_apply_esp_line(&driver, &state, "RCV,32\r\n"), 2);
+    failures += require_int("rcv keeps pending state", state.control_state[0], UI_CONTROL_PENDING);
+
+    failures += require_int("apply state", ui_apply_esp_line(&driver, &state, "idx:32:1\r\n"), 1);
     failures += require_int("button 1 on", state.control_state[0], UI_CONTROL_ON);
 
-    failures += require_int("apply temp", ui_apply_esp_line(&driver, &state, "TEMP,2,19.8\n"), 1);
+    failures += require_int("apply temp", ui_apply_esp_line(&driver, &state, "idx:40:198\n"), 1);
     failures += require_int("temp 2", state.temp_deci_c[1], 198);
+
+    failures += require_int("touch all off", ui_touch_down(&driver, &state, 220, 150), 1);
+    failures += require_int("all off not retryable", state.pending_retryable, 0);
 
     if (failures != 0) {
         return 1;
